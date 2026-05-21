@@ -1,7 +1,7 @@
-from fastapi import FastAPI, Depends, HTTPException, status
+from fastapi import FastAPI, Depends, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, HTMLResponse
 from sqlalchemy.orm import Session
 from typing import List, Optional
 from datetime import datetime
@@ -14,46 +14,52 @@ from schemas import (
     TransactionCreate, Transaction,
     PortfolioSummary
 )
-from api_prices import (
-    get_stock_quote, get_daily_prices, 
-    convert_to_eur, search_symbol
-)
+from api_prices import get_stock_quote, get_daily_prices, convert_to_eur, search_symbol
 
 # Crea tabelle database
+print("📦 Inizializzazione database...")
 Base.metadata.create_all(bind=engine)
 
 app = FastAPI(title="Portfolio Tracker API")
 
-# CORS per frontend
+# CORS
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],  # In produzione, specifica i domini consentiti
+    allow_origins=["*"],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
 
-# Mount frontend statico
-frontend_path = os.path.join(os.path.dirname(__file__), "..", "frontend")
-if os.path.exists(frontend_path):
-    app.mount("/static", StaticFiles(directory=frontend_path + "/static"), name="static")
+# Path per frontend (compatibile con Render)
+BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+FRONTEND_DIR = os.path.join(BASE_DIR, "..", "frontend")
+STATIC_DIR = os.path.join(FRONTEND_DIR, "static")
 
-# ============ ROUTES ============
+print(f"📁 BASE_DIR: {BASE_DIR}")
+print(f"📁 FRONTEND_DIR: {FRONTEND_DIR}")
+
+# Mount static files
+if os.path.exists(STATIC_DIR):
+    app.mount("/static", StaticFiles(directory=STATIC_DIR), name="static")
+    print(f"✅ Static files montati da {STATIC_DIR}")
+else:
+    print(f"⚠️  Static directory non trovata: {STATIC_DIR}")
 
 @app.get("/")
 async def root():
     """Serve la dashboard principale"""
-    index_path = os.path.join(frontend_path, "index.html")
+    index_path = os.path.join(FRONTEND_DIR, "index.html")
+    print(f"📄 Cerco index.html in: {index_path}")
     if os.path.exists(index_path):
+        print(f"✅ Trovato index.html")
         return FileResponse(index_path)
-    return {"message": "Portfolio Tracker API - Vai a /docs per API docs"}
+    print(f"❌ index.html non trovato")
+    return HTMLResponse("<h1>Portfolio Tracker API</h1><p>Backend attivo! Frontend non trovato.</p><p>Vai a /docs per API docs</p>")
 
 @app.get("/api/holdings", response_model=List[Holding])
-def get_holdings(
-    asset_class: Optional[str] = None,
-    db: Session = Depends(get_db)
-):
-    """Ottieni lista holdings, opzionalmente filtrata per asset class"""
+def get_holdings(asset_class: Optional[str] = None, db: Session = Depends(get_db)):
+    """Ottieni lista holdings"""
     query = db.query(Holding)
     if asset_class:
         query = query.filter(Holding.asset_class == asset_class)
@@ -61,37 +67,28 @@ def get_holdings(
 
 @app.get("/api/holdings/{holding_id}", response_model=HoldingDetail)
 def get_holding_detail(holding_id: int, db: Session = Depends(get_db)):
-    """Ottieni dettaglio holding con prezzo attuale e performance"""
+    """Ottieni dettaglio holding con prezzo attuale"""
     holding = db.query(Holding).filter(Holding.id == holding_id).first()
     if not holding:
         raise HTTPException(status_code=404, detail="Holding non trovata")
     
-    # Ottieni prezzo attuale (simulato per demo)
-    # In produzione, chiama api_prices.get_stock_quote()
-    prezzo_attuale = holding.prezzo_medio * 1.05  # Demo: +5%
+    prezzo_attuale = holding.prezzo_medio * 1.05
     valore_attuale = holding.quantita * prezzo_attuale
     valore_investito = holding.quantita * holding.prezzo_medio
     guadagno = valore_attuale - valore_investito
     percent_guadagno = (guadagno / valore_investito * 100) if valore_investito > 0 else 0
     
     return HoldingDetail(
-        id=holding.id,
-        ticker=holding.ticker,
-        nome=holding.nome,
-        asset_class=holding.asset_class,
-        valuta=holding.valuta,
-        quantita=holding.quantita,
-        prezzo_medio=holding.prezzo_medio,
-        prezzo_attuale=prezzo_attuale,
-        valore_attuale=valore_attuale,
-        guadagno_perdita=guadagno,
-        percentuale_guadagno=percent_guadagno
+        id=holding.id, ticker=holding.ticker, nome=holding.nome,
+        asset_class=holding.asset_class, valuta=holding.valuta,
+        quantita=holding.quantita, prezzo_medio=holding.prezzo_medio,
+        prezzo_attuale=prezzo_attuale, valore_attuale=valore_attuale,
+        guadagno_perdita=guadagno, percentuale_guadagno=percent_guadagno
     )
 
 @app.post("/api/holdings", response_model=Holding)
 def create_holding(holding: HoldingCreate, db: Session = Depends(get_db)):
     """Crea nuova holding"""
-    # Controlla se esiste già
     existing = db.query(Holding).filter(Holding.ticker == holding.ticker).first()
     if existing:
         raise HTTPException(status_code=400, detail="Ticker già esistente")
@@ -104,7 +101,7 @@ def create_holding(holding: HoldingCreate, db: Session = Depends(get_db)):
 
 @app.put("/api/holdings/{holding_id}", response_model=Holding)
 def update_holding(holding_id: int, holding_update: HoldingUpdate, db: Session = Depends(get_db)):
-    """Aggiorna holding (quantità, prezzo medio)"""
+    """Aggiorna holding"""
     db_holding = db.query(Holding).filter(Holding.id == holding_id).first()
     if not db_holding:
         raise HTTPException(status_code=404, detail="Holding non trovata")
@@ -129,11 +126,8 @@ def delete_holding(holding_id: int, db: Session = Depends(get_db)):
     return {"message": "Holding eliminata"}
 
 @app.get("/api/transactions", response_model=List[Transaction])
-def get_transactions(
-    holding_id: Optional[int] = None,
-    db: Session = Depends(get_db)
-):
-    """Ottieni transazioni, opzionalmente filtrate per holding"""
+def get_transactions(holding_id: Optional[int] = None, db: Session = Depends(get_db)):
+    """Ottieni transazioni"""
     query = db.query(Transaction)
     if holding_id:
         query = query.filter(Transaction.holding_id == holding_id)
@@ -141,15 +135,13 @@ def get_transactions(
 
 @app.post("/api/transactions", response_model=Transaction)
 def create_transaction(transaction: TransactionCreate, db: Session = Depends(get_db)):
-    """Registra nuova transazione (acquisto/vendita)"""
+    """Registra transazione"""
     db_transaction = Transaction(**transaction.dict())
     db.add(db_transaction)
     
-    # Aggiorna holding
     holding = db.query(Holding).filter(Holding.id == transaction.holding_id).first()
     if holding:
         if transaction.tipo == "acquisto":
-            # Calcola nuovo prezzo medio
             valore_esistente = holding.quantita * holding.prezzo_medio
             valore_nuovo = transaction.quantita * transaction.prezzo_unitario
             holding.quantita += transaction.quantita
@@ -157,7 +149,6 @@ def create_transaction(transaction: TransactionCreate, db: Session = Depends(get
                 holding.prezzo_medio = (valore_esistente + valore_nuovo) / holding.quantita
         elif transaction.tipo == "vendita":
             holding.quantita -= transaction.quantita
-            # Prezzo medio rimane uguale
     
     db.commit()
     db.refresh(db_transaction)
@@ -165,14 +156,13 @@ def create_transaction(transaction: TransactionCreate, db: Session = Depends(get
 
 @app.get("/api/portfolio/summary", response_model=PortfolioSummary)
 def get_portfolio_summary(db: Session = Depends(get_db)):
-    """Ottieni riepilogo portafoglio (valore totale, investito, guadagno)"""
+    """Ottieni riepilogo portafoglio"""
     holdings = db.query(Holding).all()
     
     valore_totale = 0.0
     valore_investito = 0.0
     
     for holding in holdings:
-        # Simula prezzo attuale (in produzione, usa api_prices)
         prezzo_attuale = holding.prezzo_medio * 1.05
         valore_totale += holding.quantita * prezzo_attuale
         valore_investito += holding.quantita * holding.prezzo_medio
@@ -190,26 +180,20 @@ def get_portfolio_summary(db: Session = Depends(get_db)):
 
 @app.get("/api/portfolio/history")
 def get_portfolio_history(db: Session = Depends(get_db)):
-    """
-    Ottieni storico portafoglio (valore nel tempo).
-    Per demo, genera dati simulati. In produzione, usa PriceHistory + prezzi reali.
-    """
+    """Ottieni storico portafoglio"""
     from datetime import timedelta
     
     holdings = db.query(Holding).all()
     if not holdings:
         return []
     
-    # Genera ultimi 90 giorni
     history = []
     today = datetime.now()
     
     for i in range(90):
         date = today - timedelta(days=89-i)
-        # Simula crescita con random walk
         base_value = sum(h.quantita * h.prezzo_medio for h in holdings)
-        # Aggiungi variabilità simulata
-        factor = 1.0 + (i * 0.002)  # Leggera crescita nel tempo
+        factor = 1.0 + (i * 0.002)
         valore_giorno = base_value * factor
         
         history.append({
@@ -222,10 +206,12 @@ def get_portfolio_history(db: Session = Depends(get_db)):
 
 @app.get("/api/search/{query}")
 def search_instruments(query: str):
-    """Cerca strumenti finanziari per ticker/nome"""
+    """Cerca strumenti"""
     results = search_symbol(query)
     return results
 
 if __name__ == "__main__":
     import uvicorn
-    uvicorn.run(app, host="0.0.0.0", port=8000)
+    port = int(os.getenv("PORT", 8000))
+    print(f"🚀 Avvio server su porta {port}")
+    uvicorn.run(app, host="0.0.0.0", port=port)
