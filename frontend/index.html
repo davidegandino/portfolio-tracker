@@ -1,0 +1,496 @@
+<!DOCTYPE html>
+<html lang="it">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Portfolio Tracker - Dashboard</title>
+    
+    <!-- Alpine.js per interattività -->
+    <script defer src="https://cdn.jsdelivr.net/npm/alpinejs@3.x.x/dist/cdn.min.js"></script>
+    
+    <!-- Chart.js per grafici -->
+    <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+    
+    <!-- HTMX per aggiornamenti dinamici -->
+    <script src="https://unpkg.com/htmx.org@1.9.10"></script>
+    
+    <!-- Tailwind CSS per styling -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    
+    <style>
+        .chart-container {
+            position: relative;
+            height: 400px;
+            width: 100%;
+        }
+        .card {
+            background: white;
+            border-radius: 8px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+            padding: 1.5rem;
+        }
+        .positive { color: #10b981; }
+        .negative { color: #ef4444; }
+    </style>
+</head>
+<body class="bg-gray-100" x-data="portfolioApp()" x-init="init()">
+    
+    <!-- Header -->
+    <header class="bg-white shadow">
+        <div class="max-w-7xl mx-auto px-4 py-6 sm:px-6 lg:px-8">
+            <h1 class="text-3xl font-bold text-gray-900">📊 Portfolio Tracker</h1>
+            <p class="text-gray-600 mt-1">Monitora i tuoi investimenti in tempo reale</p>
+        </div>
+    </header>
+    
+    <main class="max-w-7xl mx-auto px-4 py-8 sm:px-6 lg:px-8">
+        
+        <!-- Riepilogo Portafoglio -->
+        <div class="grid grid-cols-1 md:grid-cols-4 gap-6 mb-8">
+            <!-- Valore Totale -->
+            <div class="card">
+                <h3 class="text-sm font-medium text-gray-500">Valore Totale</h3>
+                <p class="text-3xl font-bold text-gray-900 mt-2">€ <span x-text="formatNumber(summary.valore_totale)">0.00</span></p>
+            </div>
+            
+            <!-- Valore Investito -->
+            <div class="card">
+                <h3 class="text-sm font-medium text-gray-500">Investito</h3>
+                <p class="text-3xl font-bold text-gray-900 mt-2">€ <span x-text="formatNumber(summary.valore_investito)">0.00</span></p>
+            </div>
+            
+            <!-- Guadagno/Perdita -->
+            <div class="card">
+                <h3 class="text-sm font-medium text-gray-500">Guadagno/Perdita</h3>
+                <p class="text-3xl font-bold mt-2" :class="summary.guadagno_perdita >= 0 ? 'positive' : 'negative'">
+                    <span x-text="summary.guadagno_perdita >= 0 ? '+' : ''">€</span>
+                    <span x-text="formatNumber(summary.guadagno_perdita)">0.00</span>
+                </p>
+                <p class="text-sm mt-1" :class="summary.percentuale_guadagno >= 0 ? 'positive' : 'negative'">
+                    (<span x-text="formatPercent(summary.percentuale_guadagno)">0.00</span>%)
+                </p>
+            </div>
+            
+            <!-- Numero Holdings -->
+            <div class="card">
+                <h3 class="text-sm font-medium text-gray-500">Strumenti</h3>
+                <p class="text-3xl font-bold text-gray-900 mt-2"><span x-text="summary.numero_holdings">0</span></p>
+            </div>
+        </div>
+        
+        <!-- Grafici -->
+        <div class="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-8">
+            <!-- Valore nel Tempo -->
+            <div class="card">
+                <h3 class="text-lg font-semibold text-gray-900 mb-4">📈 Valore nel Tempo</h3>
+                <div class="chart-container">
+                    <canvas id="valueChart"></canvas>
+                </div>
+            </div>
+            
+            <!-- Allocazione per Asset Class -->
+            <div class="card">
+                <h3 class="text-lg font-semibold text-gray-900 mb-4">🎯 Allocazione per Asset Class</h3>
+                <div class="chart-container">
+                    <canvas id="allocationChart"></canvas>
+                </div>
+            </div>
+        </div>
+        
+        <!-- Filtri e Tabella Holdings -->
+        <div class="card mb-8">
+            <div class="flex flex-col md:flex-row md:items-center md:justify-between mb-4">
+                <h3 class="text-lg font-semibold text-gray-900 mb-4 md:mb-0">💼 I Tuoi Strumenti</h3>
+                
+                <!-- Filtri -->
+                <div class="flex space-x-4">
+                    <select 
+                        x-model="filters.assetClass"
+                        @change="applyFilters()"
+                        class="px-4 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    >
+                        <option value="">Tutte le Asset Class</option>
+                        <option value="azione">Azioni</option>
+                        <option value="etf">ETF</option>
+                        <option value="fondo">Fondi</option>
+                    </select>
+                    
+                    <select 
+                        x-model="filters.holding"
+                        @change="applyFilters()"
+                        class="px-4 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    >
+                        <option value="">Tutti i Titoli</option>
+                        <template x-for="h in holdings" :key="h.id">
+                            <option :value="h.ticker" x-text="h.ticker + ' - ' + h.nome"></option>
+                        </template>
+                    </select>
+                </div>
+            </div>
+            
+            <!-- Tabella -->
+            <div class="overflow-x-auto">
+                <table class="min-w-full divide-y divide-gray-200">
+                    <thead class="bg-gray-50">
+                        <tr>
+                            <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Ticker</th>
+                            <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Nome</th>
+                            <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Asset Class</th>
+                            <th class="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">Quantità</th>
+                            <th class="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">Prezzo Medio</th>
+                            <th class="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">Prezzo Att.</th>
+                            <th class="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">Valore</th>
+                            <th class="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">Gain/Loss</th>
+                        </tr>
+                    </thead>
+                    <tbody class="bg-white divide-y divide-gray-200">
+                        <template x-for="holding in filteredHoldings" :key="holding.id">
+                            <tr>
+                                <td class="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900" x-text="holding.ticker"></td>
+                                <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500" x-text="holding.nome"></td>
+                                <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+                                    <span class="px-2 py-1 text-xs rounded-full"
+                                          :class="{
+                                              'bg-blue-100 text-blue-800': holding.asset_class === 'azione',
+                                              'bg-green-100 text-green-800': holding.asset_class === 'etf',
+                                              'bg-purple-100 text-purple-800': holding.asset_class === 'fondo'
+                                          }"
+                                          x-text="holding.asset_class">
+                                    </span>
+                                </td>
+                                <td class="px-6 py-4 whitespace-nowrap text-sm text-right text-gray-900" x-text="formatNumber(holding.quantita)"></td>
+                                <td class="px-6 py-4 whitespace-nowrap text-sm text-right text-gray-900">€ <span x-text="formatNumber(holding.prezzo_medio)"></span></td>
+                                <td class="px-6 py-4 whitespace-nowrap text-sm text-right text-gray-900">€ <span x-text="formatNumber(holding.prezzo_attuale)"></span></td>
+                                <td class="px-6 py-4 whitespace-nowrap text-sm text-right text-gray-900">€ <span x-text="formatNumber(holding.valore_attuale)"></span></td>
+                                <td class="px-6 py-4 whitespace-nowrap text-sm text-right" 
+                                    :class="holding.guadagno_perdita >= 0 ? 'positive' : 'negative'">
+                                    <span x-text="holding.guadagno_perdita >= 0 ? '+' : ''">€</span><span x-text="formatNumber(holding.guadagno_perdita)"></span>
+                                    <br>
+                                    <span class="text-xs" x-text="formatPercent(holding.percentuale_guadagno)"></span>
+                                </td>
+                            </tr>
+                        </template>
+                    </tbody>
+                </table>
+            </div>
+            
+            <!-- Aggiungi Nuova Holding -->
+            <div class="mt-6 pt-6 border-t border-gray-200">
+                <h4 class="text-md font-semibold text-gray-900 mb-4">➕ Aggiungi Nuovo Strumento</h4>
+                <form @submit.prevent="addHolding()" class="grid grid-cols-1 md:grid-cols-5 gap-4">
+                    <input 
+                        type="text" 
+                        x-model="newHolding.ticker"
+                        placeholder="Ticker (es. VWRP)"
+                        class="px-4 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                        required
+                    >
+                    <input 
+                        type="text" 
+                        x-model="newHolding.nome"
+                        placeholder="Nome completo"
+                        class="px-4 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                        required
+                    >
+                    <select 
+                        x-model="newHolding.asset_class"
+                        class="px-4 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                        required
+                    >
+                        <option value="">Seleziona...</option>
+                        <option value="azione">Azione</option>
+                        <option value="etf">ETF</option>
+                        <option value="fondo">Fondo</option>
+                    </select>
+                    <input 
+                        type="number" 
+                        step="0.01"
+                        x-model="newHolding.quantita"
+                        placeholder="Quantità"
+                        class="px-4 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                        required
+                    >
+                    <input 
+                        type="number" 
+                        step="0.01"
+                        x-model="newHolding.prezzo_medio"
+                        placeholder="Prezzo medio"
+                        class="px-4 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                        required
+                    >
+                    <button 
+                        type="submit"
+                        class="md:col-span-5 bg-blue-600 text-white px-6 py-2 rounded-md hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    >
+                        Aggiungi Strumento
+                    </button>
+                </form>
+            </div>
+        </div>
+        
+        <!-- Aggiungi Transazione -->
+        <div class="card">
+            <h3 class="text-lg font-semibold text-gray-900 mb-4">💰 Registra Transazione</h3>
+            <form @submit.prevent="addTransaction()" class="grid grid-cols-1 md:grid-cols-6 gap-4">
+                <select 
+                    x-model="newTransaction.holding_id"
+                    class="px-4 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    required
+                >
+                    <option value="">Seleziona strumento...</option>
+                    <template x-for="h in holdings" :key="h.id">
+                        <option :value="h.id" x-text="h.ticker + ' - ' + h.nome"></option>
+                    </template>
+                </select>
+                <select 
+                    x-model="newTransaction.tipo"
+                    class="px-4 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    required
+                >
+                    <option value="acquisto">Acquisto</option>
+                    <option value="vendita">Vendita</option>
+                </select>
+                <input 
+                    type="number" 
+                    step="0.01"
+                    x-model="newTransaction.quantita"
+                    placeholder="Quantità"
+                    class="px-4 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    required
+                >
+                <input 
+                    type="number" 
+                    step="0.01"
+                    x-model="newTransaction.prezzo_unitario"
+                    placeholder="Prezzo unitario"
+                    class="px-4 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    required
+                >
+                <input 
+                    type="date"
+                    x-model="newTransaction.data_transazione"
+                    class="px-4 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    required
+                >
+                <button 
+                    type="submit"
+                    class="bg-green-600 text-white px-6 py-2 rounded-md hover:bg-green-700 focus:outline-none focus:ring-2 focus:ring-green-500"
+                >
+                    Registra
+                </button>
+            </form>
+        </div>
+        
+    </main>
+    
+    <script>
+        function portfolioApp() {
+            return {
+                summary: {
+                    valore_totale: 0,
+                    valore_investito: 0,
+                    guadagno_perdita: 0,
+                    percentuale_guadagno: 0,
+                    numero_holdings: 0
+                },
+                holdings: [],
+                filteredHoldings: [],
+                portfolioHistory: [],
+                filters: {
+                    assetClass: '',
+                    holding: ''
+                },
+                newHolding: {
+                    ticker: '',
+                    nome: '',
+                    asset_class: '',
+                    quantita: 0,
+                    prezzo_medio: 0
+                },
+                newTransaction: {
+                    holding_id: '',
+                    tipo: 'acquisto',
+                    quantita: 0,
+                    prezzo_unitario: 0,
+                    data_transazione: new Date().toISOString().split('T')[0]
+                },
+                valueChart: null,
+                allocationChart: null,
+                
+                async init() {
+                    await this.loadData();
+                    this.initCharts();
+                },
+                
+                async loadData() {
+                    // Carica riepilogo
+                    const summaryRes = await fetch('/api/portfolio/summary');
+                    this.summary = await summaryRes.json();
+                    
+                    // Carica holdings
+                    const holdingsRes = await fetch('/api/holdings');
+                    this.holdings = await holdingsRes.json();
+                    
+                    // Carica dettaglio holdings con prezzi attuali
+                    for (let i = 0; i < this.holdings.length; i++) {
+                        const detailRes = await fetch(`/api/holdings/${this.holdings[i].id}`);
+                        const detail = await detailRes.json();
+                        this.holdings[i] = detail;
+                    }
+                    
+                    // Carica storico
+                    const historyRes = await fetch('/api/portfolio/history');
+                    this.portfolioHistory = await historyRes.json();
+                    
+                    this.applyFilters();
+                    this.updateCharts();
+                },
+                
+                applyFilters() {
+                    this.filteredHoldings = this.holdings.filter(h => {
+                        const matchAsset = !this.filters.assetClass || h.asset_class === this.filters.assetClass;
+                        const matchHolding = !this.filters.holding || h.ticker === this.filters.holding;
+                        return matchAsset && matchHolding;
+                    });
+                },
+                
+                async addHolding() {
+                    const res = await fetch('/api/holdings', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify(this.newHolding)
+                    });
+                    
+                    if (res.ok) {
+                        alert('Strumento aggiunto!');
+                        this.newHolding = { ticker: '', nome: '', asset_class: '', quantita: 0, prezzo_medio: 0 };
+                        await this.loadData();
+                    } else {
+                        const error = await res.json();
+                        alert('Errore: ' + error.detail);
+                    }
+                },
+                
+                async addTransaction() {
+                    const res = await fetch('/api/transactions', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify(this.newTransaction)
+                    });
+                    
+                    if (res.ok) {
+                        alert('Transazione registrata!');
+                        this.newTransaction = {
+                            holding_id: '',
+                            tipo: 'acquisto',
+                            quantita: 0,
+                            prezzo_unitario: 0,
+                            data_transazione: new Date().toISOString().split('T')[0]
+                        };
+                        await this.loadData();
+                    } else {
+                        const error = await res.json();
+                        alert('Errore: ' + error.detail);
+                    }
+                },
+                
+                formatNumber(num) {
+                    return new Intl.NumberFormat('it-IT', { minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(num);
+                },
+                
+                formatPercent(num) {
+                    return new Intl.NumberFormat('it-IT', { minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(num);
+                },
+                
+                initCharts() {
+                    // Chart Valore nel Tempo
+                    const ctxValue = document.getElementById('valueChart').getContext('2d');
+                    this.valueChart = new Chart(ctxValue, {
+                        type: 'line',
+                        data: {
+                            labels: [],
+                            datasets: [
+                                {
+                                    label: 'Valore Totale',
+                                    data: [],
+                                    borderColor: 'rgb(59, 130, 246)',
+                                    backgroundColor: 'rgba(59, 130, 246, 0.1)',
+                                    fill: true,
+                                    tension: 0.4
+                                },
+                                {
+                                    label: 'Investito',
+                                    data: [],
+                                    borderColor: 'rgb(107, 114, 128)',
+                                    borderDash: [5, 5],
+                                    fill: false,
+                                    tension: 0.4
+                                }
+                            ]
+                        },
+                        options: {
+                            responsive: true,
+                            maintainAspectRatio: false,
+                            plugins: {
+                                legend: {
+                                    position: 'top'
+                                }
+                            },
+                            scales: {
+                                y: {
+                                    beginAtZero: false
+                                }
+                            }
+                        }
+                    });
+                    
+                    // Chart Allocazione
+                    const ctxAlloc = document.getElementById('allocationChart').getContext('2d');
+                    this.allocationChart = new Chart(ctxAlloc, {
+                        type: 'doughnut',
+                        data: {
+                            labels: [],
+                            datasets: [{
+                                data: [],
+                                backgroundColor: [
+                                    'rgba(59, 130, 246, 0.8)',
+                                    'rgba(16, 185, 129, 0.8)',
+                                    'rgba(139, 92, 246, 0.8)'
+                                ]
+                            }]
+                        },
+                        options: {
+                            responsive: true,
+                            maintainAspectRatio: false,
+                            plugins: {
+                                legend: {
+                                    position: 'right'
+                                }
+                            }
+                        }
+                    });
+                },
+                
+                updateCharts() {
+                    // Aggiorna chart valore
+                    this.valueChart.data.labels = this.portfolioHistory.map(h => h.data);
+                    this.valueChart.data.datasets[0].data = this.portfolioHistory.map(h => h.valore_totale);
+                    this.valueChart.data.datasets[1].data = this.portfolioHistory.map(h => h.valore_investito);
+                    this.valueChart.update();
+                    
+                    // Aggiorna chart allocazione
+                    const allocation = {};
+                    this.holdings.forEach(h => {
+                        if (!allocation[h.asset_class]) allocation[h.asset_class] = 0;
+                        allocation[h.asset_class] += h.valore_attuale || 0;
+                    });
+                    
+                    this.allocationChart.data.labels = Object.keys(allocation);
+                    this.allocationChart.data.datasets[0].data = Object.values(allocation);
+                    this.allocationChart.update();
+                }
+            }
+        }
+    </script>
+</body>
+</html>
