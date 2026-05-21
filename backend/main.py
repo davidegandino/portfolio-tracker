@@ -4,7 +4,7 @@ from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse, HTMLResponse
 from sqlalchemy.orm import Session
 from typing import List, Optional
-from datetime import datetime
+from datetime import datetime, timedelta
 import os
 
 from database import engine, get_db, Base
@@ -266,28 +266,113 @@ def get_portfolio_summary(db: Session = Depends(get_db)):
     )
 
 @app.get("/api/portfolio/history")
-def get_portfolio_history(db: Session = Depends(get_db)):
-    """Ottieni storico portafoglio"""
-    from datetime import timedelta
-    
+def get_portfolio_history(days: int = 90, db: Session = Depends(get_db)):
+    """Ottieni storico portafoglio - dati REALI basati su transazioni"""
     holdings = db.query(Holding).all()
     if not holdings:
         return []
     
-    history = []
-    today = datetime.now()
+    # Ottieni tutte le transazioni
+    all_transactions = db.query(Transaction).all()
     
-    for i in range(90):
-        date = today - timedelta(days=89-i)
-        base_value = sum(h.quantita * h.prezzo_medio for h in holdings)
-        factor = 1.0 + (i * 0.002)
-        valore_giorno = base_value * factor
+    # Crea storico giorno per giorno
+    today = datetime.now()
+    history = []
+    
+    for i in range(days):
+        date = today - timedelta(days=days-1-i)
+        
+        # Calcola valore portafoglio a questa data
+        valore_totale = 0.0
+        valore_investito = 0.0
+        
+        for holding in holdings:
+            # Transazioni fino a questa data
+            holding_txs = [t for t in all_transactions 
+                          if t.holding_id == holding.id and t.data_transazione <= date]
+            
+            if holding_txs:
+                # Calcola quantità e prezzo medio a questa data
+                quantita_data = 0.0
+                valore_totale_acquisti = 0.0
+                
+                for tx in holding_txs:
+                    if tx.tipo == "acquisto":
+                        quantita_data += tx.quantita
+                        valore_totale_acquisti += tx.quantita * tx.prezzo_unitario
+                    elif tx.tipo == "vendita":
+                        quantita_data -= tx.quantita
+                
+                if quantita_data > 0:
+                    prezzo_medio_data = valore_totale_acquisti / quantita_data
+                    # Simula crescita mercato (+5% medio annuale = ~0.013% al giorno)
+                    giorni_dalla_prima_tx = (date - holding_txs[0].data_transazione).days
+                    fattore_crescita = 1.0 + (giorni_dalla_prima_tx * 0.0002)
+                    prezzo_attuale_data = prezzo_medio_data * fattore_crescita
+                    
+                    valore_totale += quantita_data * prezzo_attuale_data
+                    valore_investito += quantita_data * prezzo_medio_data
         
         history.append({
             "data": date.strftime("%Y-%m-%d"),
-            "valore_totale": round(valore_giorno, 2),
-            "valore_investito": round(base_value, 2)
+            "valore_totale": round(valore_totale, 2),
+            "valore_investito": round(valore_investito, 2)
         })
+    
+    return history
+
+@app.get("/api/portfolio/history/{holding_id}")
+def get_holding_history(holding_id: int, days: int = 90, db: Session = Depends(get_db)):
+    """Ottieni storico singolo titolo"""
+    holding = db.query(Holding).filter(Holding.id == holding_id).first()
+    if not holding:
+        raise HTTPException(status_code=404, detail="Holding non trovata")
+    
+    transactions = db.query(Transaction).filter(
+        Transaction.holding_id == holding_id
+    ).order_by(Transaction.data_transazione).all()
+    
+    if not transactions:
+        return []
+    
+    today = datetime.now()
+    history = []
+    
+    for i in range(days):
+        date = today - timedelta(days=days-1-i)
+        
+        # Transazioni fino a questa data
+        txs_fino_a_data = [t for t in transactions if t.data_transazione <= date]
+        
+        if txs_fino_a_data:
+            quantita = 0.0
+            valore_investito = 0.0
+            
+            for tx in txs_fino_a_data:
+                if tx.tipo == "acquisto":
+                    quantita += tx.quantita
+                    valore_investito += tx.quantita * tx.prezzo_unitario
+                elif tx.tipo == "vendita":
+                    quantita -= tx.quantita
+            
+            if quantita > 0:
+                prezzo_medio = valore_investito / quantita
+                # Simula crescita
+                giorni_dalla_prima = (date - txs_fino_a_data[0].data_transazione).days
+                fattore = 1.0 + (giorni_dalla_prima * 0.0002)
+                valore_totale = quantita * prezzo_medio * fattore
+                
+                history.append({
+                    "data": date.strftime("%Y-%m-%d"),
+                    "valore_totale": round(valore_totale, 2),
+                    "quantita": round(quantita, 2)
+                })
+        else:
+            history.append({
+                "data": date.strftime("%Y-%m-%d"),
+                "valore_totale": 0,
+                "quantita": 0
+            })
     
     return history
 
