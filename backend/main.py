@@ -20,6 +20,90 @@ from api_prices import get_stock_quote, get_daily_prices, convert_to_eur, search
 print("📦 Inizializzazione database...")
 Base.metadata.create_all(bind=engine)
 
+# Inizializza con dati demo se vuoto
+def init_demo_data(db: Session):
+    """Inizializza database con dati demo se non ci sono holdings"""
+    holdings_count = db.query(Holding).count()
+    if holdings_count == 0:
+        print("📊 Database vuoto - creo dati demo...")
+        
+        # Importa demo_data
+        import sys
+        sys.path.insert(0, os.path.dirname(__file__))
+        
+        # Crea holdings
+        holdings_data = [
+            {"ticker": "VWRP", "nome": "Vanguard FTSE All-World UCITS ETF Accumulating", "asset_class": AssetClass.ETF, "valuta": "EUR"},
+            {"ticker": "VUAA", "nome": "Vanguard S&P 500 UCITS ETF Accumulating", "asset_class": AssetClass.ETF, "valuta": "EUR"},
+            {"ticker": "AAPL", "nome": "Apple Inc.", "asset_class": AssetClass.AZIONE, "valuta": "USD"},
+            {"ticker": "MSFT", "nome": "Microsoft Corporation", "asset_class": AssetClass.AZIONE, "valuta": "USD"},
+            {"ticker": "EQQQ", "nome": "Invesco EQQQ Nasdaq-100 UCITS ETF", "asset_class": AssetClass.FONDO, "valuta": "EUR"},
+            {"ticker": "VWRL", "nome": "Vanguard FTSE All-World UCITS ETF Distributing", "asset_class": AssetClass.FONDO, "valuta": "EUR"},
+        ]
+        
+        for h in holdings_data:
+            holding = Holding(**h, quantita=0.0, prezzo_medio=0.0)
+            db.add(holding)
+        
+        db.commit()
+        
+        # Recupera holdings create
+        holdings_by_ticker = {h.ticker: h for h in db.query(Holding).all()}
+        
+        # Transazioni demo
+        transactions_data = [
+            # VWRP
+            {"ticker": "VWRP", "tipo": "acquisto", "quantita": 20.0, "prezzo": 96.50, "data": datetime(2024, 1, 15), "note": "Inizio 2024"},
+            {"ticker": "VWRP", "tipo": "acquisto", "quantita": 15.0, "prezzo": 108.20, "data": datetime(2024, 12, 10), "note": "Fine 2024"},
+            {"ticker": "VWRP", "tipo": "acquisto", "quantita": 10.0, "prezzo": 115.80, "data": datetime(2025, 6, 15), "note": "Metà 2025"},
+            # VUAA
+            {"ticker": "VUAA", "tipo": "acquisto", "quantita": 15.0, "prezzo": 87.30, "data": datetime(2024, 1, 15), "note": "Inizio 2024"},
+            {"ticker": "VUAA", "tipo": "acquisto", "quantita": 12.0, "prezzo": 102.50, "data": datetime(2024, 12, 10), "note": "Fine 2024"},
+            {"ticker": "VUAA", "tipo": "acquisto", "quantita": 8.0, "prezzo": 118.90, "data": datetime(2025, 6, 15), "note": "Metà 2025"},
+            # AAPL
+            {"ticker": "AAPL", "tipo": "acquisto", "quantita": 10.0, "prezzo": 185.50, "data": datetime(2024, 1, 15), "note": "Inizio 2024"},
+            {"ticker": "AAPL", "tipo": "acquisto", "quantita": 8.0, "prezzo": 232.80, "data": datetime(2024, 12, 10), "note": "Fine 2024"},
+            {"ticker": "AAPL", "tipo": "acquisto", "quantita": 5.0, "prezzo": 245.20, "data": datetime(2025, 6, 15), "note": "Metà 2025"},
+            # MSFT
+            {"ticker": "MSFT", "tipo": "acquisto", "quantita": 8.0, "prezzo": 375.20, "data": datetime(2024, 1, 15), "note": "Inizio 2024"},
+            {"ticker": "MSFT", "tipo": "acquisto", "quantita": 6.0, "prezzo": 438.50, "data": datetime(2024, 12, 10), "note": "Fine 2024"},
+            {"ticker": "MSFT", "tipo": "acquisto", "quantita": 4.0, "prezzo": 485.30, "data": datetime(2025, 6, 15), "note": "Metà 2025"},
+            # EQQQ
+            {"ticker": "EQQQ", "tipo": "acquisto", "quantita": 5.0, "prezzo": 415.60, "data": datetime(2024, 1, 15), "note": "Inizio 2024"},
+            {"ticker": "EQQQ", "tipo": "acquisto", "quantita": 4.0, "prezzo": 498.30, "data": datetime(2024, 12, 10), "note": "Fine 2024"},
+            {"ticker": "EQQQ", "tipo": "acquisto", "quantita": 3.0, "prezzo": 572.40, "data": datetime(2025, 6, 15), "note": "Metà 2025"},
+            # VWRL
+            {"ticker": "VWRL", "tipo": "acquisto", "quantita": 25.0, "prezzo": 89.80, "data": datetime(2024, 1, 15), "note": "Inizio 2024"},
+            {"ticker": "VWRL", "tipo": "acquisto", "quantita": 18.0, "prezzo": 100.50, "data": datetime(2024, 12, 10), "note": "Fine 2024"},
+            {"ticker": "VWRL", "tipo": "acquisto", "quantita": 12.0, "prezzo": 108.20, "data": datetime(2025, 6, 15), "note": "Metà 2025"},
+        ]
+        
+        for t in transactions_data:
+            holding = holdings_by_ticker[t["ticker"]]
+            trans = Transaction(
+                holding_id=holding.id,
+                tipo=t["tipo"],
+                quantita=t["quantita"],
+                prezzo_unitario=t["prezzo"],
+                valuta=holding.valuta,
+                data_transazione=t["data"],
+                note=t["note"]
+            )
+            db.add(trans)
+            
+            # Aggiorna holding
+            if t["tipo"] == "acquisto":
+                valore_esistente = holding.quantita * holding.prezzo_medio
+                valore_nuovo = t["quantita"] * t["prezzo"]
+                holding.quantita += t["quantita"]
+                if holding.quantita > 0:
+                    holding.prezzo_medio = (valore_esistente + valore_nuovo) / holding.quantita
+        
+        db.commit()
+        print(f"✅ Creati {len(holdings_data)} holdings e {len(transactions_data)} transazioni demo")
+    else:
+        print(f"✅ Database già popolato con {holdings_count} holdings")
+
 app = FastAPI(title="Portfolio Tracker API")
 
 # CORS
@@ -31,7 +115,7 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# Path per frontend (compatibile con Render)
+# Path per frontend
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 FRONTEND_DIR = os.path.join(BASE_DIR, "..", "frontend")
 STATIC_DIR = os.path.join(FRONTEND_DIR, "static")
@@ -43,8 +127,15 @@ print(f"📁 FRONTEND_DIR: {FRONTEND_DIR}")
 if os.path.exists(STATIC_DIR):
     app.mount("/static", StaticFiles(directory=STATIC_DIR), name="static")
     print(f"✅ Static files montati da {STATIC_DIR}")
-else:
-    print(f"⚠️  Static directory non trovata: {STATIC_DIR}")
+
+@app.on_event("startup")
+async def startup_event():
+    """Inizializza database all'avvio"""
+    db = next(get_db())
+    try:
+        init_demo_data(db)
+    finally:
+        db.close()
 
 @app.get("/")
 async def root():
@@ -55,7 +146,7 @@ async def root():
         print(f"✅ Trovato index.html")
         return FileResponse(index_path)
     print(f"❌ index.html non trovato")
-    return HTMLResponse("<h1>Portfolio Tracker API</h1><p>Backend attivo! Frontend non trovato.</p><p>Vai a /docs per API docs</p>")
+    return HTMLResponse("<h1>Portfolio Tracker API</h1><p>Backend attivo! Frontend non trovato.</p>")
 
 @app.get("/api/holdings", response_model=List[Holding])
 def get_holdings(asset_class: Optional[str] = None, db: Session = Depends(get_db)):
@@ -67,7 +158,7 @@ def get_holdings(asset_class: Optional[str] = None, db: Session = Depends(get_db
 
 @app.get("/api/holdings/{holding_id}", response_model=HoldingDetail)
 def get_holding_detail(holding_id: int, db: Session = Depends(get_db)):
-    """Ottieni dettaglio holding con prezzo attuale"""
+    """Ottieni dettaglio holding"""
     holding = db.query(Holding).filter(Holding.id == holding_id).first()
     if not holding:
         raise HTTPException(status_code=404, detail="Holding non trovata")
