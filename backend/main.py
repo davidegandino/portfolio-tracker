@@ -10,8 +10,8 @@ import os
 from database import engine, get_db, Base
 from models import Holding, Transaction, PriceHistory, AssetClass
 from schemas import (
-    HoldingCreate, Holding, HoldingUpdate, HoldingDetail,
-    TransactionCreate, Transaction,
+    HoldingCreate, Holding as HoldingSchema, HoldingDetail,
+    TransactionCreate, Transaction as TransactionSchema,
     PortfolioSummary
 )
 from api_prices import get_stock_quote, get_daily_prices, convert_to_eur, search_symbol
@@ -26,10 +26,6 @@ def init_demo_data(db: Session):
     holdings_count = db.query(Holding).count()
     if holdings_count == 0:
         print("📊 Database vuoto - creo dati demo...")
-        
-        # Importa demo_data
-        import sys
-        sys.path.insert(0, os.path.dirname(__file__))
         
         # Crea holdings
         holdings_data = [
@@ -148,7 +144,7 @@ async def root():
     print(f"❌ index.html non trovato")
     return HTMLResponse("<h1>Portfolio Tracker API</h1><p>Backend attivo! Frontend non trovato.</p>")
 
-@app.get("/api/holdings", response_model=List[Holding])
+@app.get("/api/holdings", response_model=List[HoldingSchema])
 def get_holdings(asset_class: Optional[str] = None, db: Session = Depends(get_db)):
     """Ottieni lista holdings"""
     query = db.query(Holding)
@@ -177,7 +173,7 @@ def get_holding_detail(holding_id: int, db: Session = Depends(get_db)):
         guadagno_perdita=guadagno, percentuale_guadagno=percent_guadagno
     )
 
-@app.post("/api/holdings", response_model=Holding)
+@app.post("/api/holdings", response_model=HoldingSchema)
 def create_holding(holding: HoldingCreate, db: Session = Depends(get_db)):
     """Crea nuova holding"""
     existing = db.query(Holding).filter(Holding.ticker == holding.ticker).first()
@@ -190,7 +186,7 @@ def create_holding(holding: HoldingCreate, db: Session = Depends(get_db)):
     db.refresh(db_holding)
     return db_holding
 
-@app.put("/api/holdings/{holding_id}", response_model=Holding)
+@app.put("/api/holdings/{holding_id}", response_model=HoldingSchema)
 def update_holding(holding_id: int, holding_update: HoldingUpdate, db: Session = Depends(get_db)):
     """Aggiorna holding"""
     db_holding = db.query(Holding).filter(Holding.id == holding_id).first()
@@ -216,7 +212,7 @@ def delete_holding(holding_id: int, db: Session = Depends(get_db)):
     db.commit()
     return {"message": "Holding eliminata"}
 
-@app.get("/api/transactions", response_model=List[Transaction])
+@app.get("/api/transactions", response_model=List[TransactionSchema])
 def get_transactions(holding_id: Optional[int] = None, db: Session = Depends(get_db)):
     """Ottieni transazioni"""
     query = db.query(Transaction)
@@ -224,7 +220,7 @@ def get_transactions(holding_id: Optional[int] = None, db: Session = Depends(get
         query = query.filter(Transaction.holding_id == holding_id)
     return query.order_by(Transaction.data_transazione.desc()).all()
 
-@app.post("/api/transactions", response_model=Transaction)
+@app.post("/api/transactions", response_model=TransactionSchema)
 def create_transaction(transaction: TransactionCreate, db: Session = Depends(get_db)):
     """Registra transazione"""
     db_transaction = Transaction(**transaction.dict())
