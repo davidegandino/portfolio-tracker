@@ -1,126 +1,128 @@
-from pydantic import BaseModel, EmailStr, Field, Enum
-from typing import Optional, List
+from pydantic import BaseModel, EmailStr, Field, validator
+from typing import Optional, List, Dict
 from datetime import datetime
-from enum import Enum as PyEnum
+from enum import Enum
 
-class AssetClass(str, PyEnum):
-    ETF = "ETF"
-    AZIONE = "AZIONE"
-    FONDO = "FONDO"
+# ============================================
+# Enums
+# ============================================
+class TransactionType(str, Enum):
+    BUY = "buy"
+    SELL = "sell"
 
-class TransactionType(str, PyEnum):
-    ACQUISTO = "acquisto"
-    VENDITA = "vendita"
+class AssetClass(str, Enum):
+    STOCKS = "stocks"
+    BONDS = "bonds"
+    ETF = "etf"
+    CRYPTO = "crypto"
+    CASH = "cash"
+    OTHER = "other"
 
-# ============ AUTH SCHEMAS ============
-
+# ============================================
+# User Schemas
+# ============================================
 class UserBase(BaseModel):
     email: EmailStr
-    is_active: bool = True
 
 class UserCreate(UserBase):
-    password: str = Field(..., min_length=8, description="Password minima 8 caratteri")
+    password: str = Field(..., min_length=8)
+    
+    @validator("password")
+    def password_strength(cls, v):
+        if len(v) < 8:
+            raise ValueError("Password deve avere almeno 8 caratteri")
+        if not any(c.isupper() for c in v):
+            raise ValueError("Password deve contenere almeno una maiuscola")
+        if not any(c.isdigit() for c in v):
+            raise ValueError("Password deve contenere almeno un numero")
+        return v
 
 class UserLogin(BaseModel):
-    email: EmailStr
+    username: EmailStr
     password: str
-    totp_code: Optional[str] = Field(None, min_length=6, max_length=6, description="Codice TOTP 6 cifre")
+    totp: Optional[str] = Field(None, min_length=6, max_length=6)
 
 class UserResponse(UserBase):
     id: int
-    is_admin: bool
-    totp_enabled: bool
+    email: str
+    totp_enabled: bool = False
     
     class Config:
         from_attributes = True
 
+# ============================================
+# Token Schema
+# ============================================
 class Token(BaseModel):
     access_token: str
-    token_type: str = "bearer"
-    requires_totp_setup: bool = False
+    token_type: str
+    totp_enabled: bool = False
 
-class TotpSetupResponse(BaseModel):
-    secret: str
-    qr_code_url: str
-    manual_entry_key: str
-
-class TotpVerifyRequest(BaseModel):
-    code: str = Field(..., min_length=6, max_length=6)
-
-# ============ HOLDING SCHEMAS ============
-
+# ============================================
+# Holding Schemas
+# ============================================
 class HoldingBase(BaseModel):
-    ticker: str = Field(..., max_length=20)
-    nome: str = Field(..., max_length=255)
-    asset_class: AssetClass
-    valuta: str = "EUR"
+    symbol: str
+    name: str
+    quantity: float = Field(..., gt=0)
+    average_price: float = Field(..., gt=0)
+    asset_class: AssetClass = AssetClass.OTHER
+    currency: str = "USD"
 
 class HoldingCreate(HoldingBase):
     pass
 
 class HoldingUpdate(BaseModel):
-    ticker: Optional[str] = None
-    nome: Optional[str] = None
+    symbol: Optional[str] = None
+    name: Optional[str] = None
+    quantity: Optional[float] = Field(None, gt=0)
+    average_price: Optional[float] = Field(None, gt=0)
     asset_class: Optional[AssetClass] = None
-    valuta: Optional[str] = None
-    quantita: Optional[float] = None
-    prezzo_medio: Optional[float] = None
+    currency: Optional[str] = None
 
-class Holding(HoldingBase):
+class HoldingResponse(HoldingBase):
     id: int
     user_id: int
-    quantita: float
-    prezzo_medio: float
-    created_at: datetime
-    updated_at: datetime
+    current_price: float = 0.0
+    current_value: float = 0.0
+    gain_loss: float = 0.0
+    gain_loss_percent: float = 0.0
     
     class Config:
         from_attributes = True
 
-class HoldingDetail(Holding):
-    prezzo_attuale: Optional[float] = None
-    valore_attuale: Optional[float] = None
-    guadagno_perdita: Optional[float] = None
-    percentuale_guadagno: Optional[float] = None
-
-# ============ TRANSACTION SCHEMAS ============
-
+# ============================================
+# Transaction Schemas
+# ============================================
 class TransactionBase(BaseModel):
-    tipo: TransactionType
-    quantita: float = Field(..., gt=0, description="Quantità deve essere positiva")
-    prezzo_unitario: float = Field(..., gt=0, description="Prezzo deve essere positivo")
-    valuta: str = "EUR"
-    note: Optional[str] = None
+    symbol: str
+    type: TransactionType
+    quantity: float = Field(..., gt=0)
+    price: float = Field(..., gt=0)
+    date: datetime = Field(default_factory=datetime.now)
+    notes: Optional[str] = None
 
 class TransactionCreate(TransactionBase):
-    holding_id: int
-    data_transazione: datetime
+    pass
 
-class TransactionUpdate(BaseModel):
-    tipo: Optional[TransactionType] = None
-    quantita: Optional[float] = None
-    prezzo_unitario: Optional[float] = None
-    note: Optional[str] = None
-
-class Transaction(TransactionBase):
+class TransactionResponse(TransactionBase):
     id: int
-    holding_id: int
-    data_transazione: datetime
-    created_at: datetime
+    user_id: int
     
     class Config:
         from_attributes = True
 
-# ============ PORTFOLIO SCHEMAS ============
-
+# ============================================
+# Portfolio Schemas
+# ============================================
 class PortfolioSummary(BaseModel):
-    valore_totale: float
-    valore_investito: float
-    guadagno_perdita: float
-    percentuale_guadagno: float
-    numero_holdings: int
+    total_value: float
+    total_cost: float
+    total_gain: float
+    total_gain_percent: float
+    holdings_count: int
+    allocation: Dict[str, float]
 
-class PortfolioHistoryItem(BaseModel):
-    data: str
-    valore_totale: float
-    valore_investito: float
+class PortfolioHistoryPoint(BaseModel):
+    date: datetime
+    value: float
