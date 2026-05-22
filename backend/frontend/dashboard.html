@@ -1,0 +1,594 @@
+<!DOCTYPE html>
+<html lang="it">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Portfolio Tracker - Dashboard</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <script>
+        tailwind.config = {
+            theme: {
+                extend: {
+                    colors: {
+                        primary: '#1e40af',
+                        secondary: '#059669',
+                        accent: '#7c3aed',
+                        success: '#10b981',
+                        danger: '#ef4444'
+                    }
+                }
+            }
+        }
+    </script>
+</head>
+<body class="bg-slate-900 min-h-screen">
+    <!-- Navbar -->
+    <nav class="bg-slate-800 border-b border-slate-700 sticky top-0 z-40">
+        <div class="max-w-7xl mx-auto px-4 py-4 flex justify-between items-center">
+            <div class="flex items-center space-x-3">
+                <span class="text-2xl">📊</span>
+                <h1 class="text-xl font-bold text-white">Portfolio Tracker</h1>
+            </div>
+            <div class="flex items-center space-x-4">
+                <span id="userEmail" class="text-gray-400"></span>
+                <button onclick="logout()" class="text-gray-400 hover:text-white transition-colors">
+                    Esci
+                </button>
+            </div>
+        </div>
+    </nav>
+
+    <div class="max-w-7xl mx-auto px-4 py-8">
+        <!-- Portfolio Summary Cards -->
+        <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-8">
+            <div class="bg-gradient-to-br from-primary to-blue-700 rounded-2xl p-6 shadow-xl">
+                <p class="text-blue-200 text-sm mb-1">Valore Totale</p>
+                <p id="totalValue" class="text-3xl font-bold text-white">€ 0.00</p>
+            </div>
+            <div class="bg-gradient-to-br from-secondary to-green-700 rounded-2xl p-6 shadow-xl">
+                <p class="text-green-200 text-sm mb-1">Costo Totale</p>
+                <p id="totalCost" class="text-3xl font-bold text-white">€ 0.00</p>
+            </div>
+            <div class="bg-gradient-to-br from-purple-600 to-accent rounded-2xl p-6 shadow-xl">
+                <p class="text-purple-200 text-sm mb-1">Guadagno/Perdita</p>
+                <p id="totalGain" class="text-3xl font-bold text-white">€ 0.00</p>
+                <p id="totalGainPercent" class="text-sm text-purple-200">(0.00%)</p>
+            </div>
+            <div class="bg-gradient-to-br from-orange-500 to-red-600 rounded-2xl p-6 shadow-xl">
+                <p class="text-orange-200 text-sm mb-1">Strumenti</p>
+                <p id="holdingsCount" class="text-3xl font-bold text-white">0</p>
+            </div>
+        </div>
+
+        <!-- Charts Row -->
+        <div class="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-8">
+            <!-- Allocation Chart -->
+            <div class="bg-slate-800 rounded-2xl p-6 shadow-xl">
+                <h3 class="text-lg font-semibold text-white mb-4">🥧 Asset Allocation</h3>
+                <div class="h-64 flex justify-center">
+                    <canvas id="allocationChart"></canvas>
+                </div>
+            </div>
+            <!-- History Chart -->
+            <div class="bg-slate-800 rounded-2xl p-6 shadow-xl">
+                <h3 class="text-lg font-semibold text-white mb-4">📈 Andamento Portfolio (30gg)</h3>
+                <div class="h-64">
+                    <canvas id="historyChart"></canvas>
+                </div>
+            </div>
+        </div>
+
+        <!-- Holdings Table -->
+        <div class="bg-slate-800 rounded-2xl p-6 shadow-xl mb-8">
+            <div class="flex justify-between items-center mb-6">
+                <h3 class="text-lg font-semibold text-white">💼 I tuoi Strumenti</h3>
+                <button onclick="showAddHoldingModal()" class="bg-primary hover:bg-blue-700 text-white px-4 py-2 rounded-lg transition-colors">
+                    + Aggiungi Strumento
+                </button>
+            </div>
+            <div class="overflow-x-auto">
+                <table class="w-full text-white">
+                    <thead>
+                        <tr class="border-b border-slate-700">
+                            <th class="text-left py-3 px-4">Simbolo</th>
+                            <th class="text-left py-3 px-4">Quantità</th>
+                            <th class="text-right py-3 px-4">Prezzo Medio</th>
+                            <th class="text-right py-3 px-4">Prezzo Attuale</th>
+                            <th class="text-right py-3 px-4">Valore</th>
+                            <th class="text-right py-3 px-4">Gain/Loss</th>
+                            <th class="text-center py-3 px-4">Azioni</th>
+                        </tr>
+                    </thead>
+                    <tbody id="holdingsTable"></tbody>
+                </table>
+            </div>
+            <p id="noHoldings" class="text-gray-500 text-center py-8 hidden">Nessuno strumento nel portfolio</p>
+        </div>
+
+        <!-- Recent Transactions -->
+        <div class="bg-slate-800 rounded-2xl p-6 shadow-xl">
+            <div class="flex justify-between items-center mb-6">
+                <h3 class="text-lg font-semibold text-white">📝 Transazioni Recenti</h3>
+                <button onclick="showAddTransactionModal()" class="bg-secondary hover:bg-green-700 text-white px-4 py-2 rounded-lg transition-colors">
+                    + Nuova Transazione
+                </button>
+            </div>
+            <div class="overflow-x-auto">
+                <table class="w-full text-white">
+                    <thead>
+                        <tr class="border-b border-slate-700">
+                            <th class="text-left py-3 px-4">Data</th>
+                            <th class="text-left py-3 px-4">Tipo</th>
+                            <th class="text-left py-3 px-4">Simbolo</th>
+                            <th class="text-right py-3 px-4">Quantità</th>
+                            <th class="text-right py-3 px-4">Prezzo</th>
+                            <th class="text-right py-3 px-4">Totale</th>
+                        </tr>
+                    </thead>
+                    <tbody id="transactionsTable"></tbody>
+                </table>
+            </div>
+            <p id="noTransactions" class="text-gray-500 text-center py-8 hidden">Nessuna transazione recente</p>
+        </div>
+    </div>
+
+    <!-- Add Holding Modal -->
+    <div id="addHoldingModal" class="hidden fixed inset-0 bg-black/70 backdrop-blur-sm flex items-center justify-center p-4 z-50">
+        <div class="bg-slate-800 rounded-2xl p-8 max-w-md w-full border border-white/20">
+            <h3 class="text-2xl font-bold text-white mb-6">Aggiungi Strumento</h3>
+            <form onsubmit="addHolding(event)">
+                <div class="mb-4">
+                    <label class="block text-gray-300 mb-2">Simbolo</label>
+                    <input type="text" id="holdingSymbol" required 
+                        class="w-full px-4 py-3 bg-slate-700 border border-slate-600 rounded-lg text-white placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-primary uppercase"
+                        placeholder="AAPL, GOOGL, BTC-USD">
+                </div>
+                <div class="mb-4">
+                    <label class="block text-gray-300 mb-2">Quantità</label>
+                    <input type="number" id="holdingQuantity" step="0.0001" required 
+                        class="w-full px-4 py-3 bg-slate-700 border border-slate-600 rounded-lg text-white placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-primary"
+                        placeholder="10">
+                </div>
+                <div class="mb-4">
+                    <label class="block text-gray-300 mb-2">Prezzo Medio di Acquisto (€)</label>
+                    <input type="number" id="holdingPrice" step="0.01" required 
+                        class="w-full px-4 py-3 bg-slate-700 border border-slate-600 rounded-lg text-white placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-primary"
+                        placeholder="150.00">
+                </div>
+                <div class="mb-4">
+                    <label class="block text-gray-300 mb-2">Classe Asset</label>
+                    <select id="holdingAssetClass" class="w-full px-4 py-3 bg-slate-700 border border-slate-600 rounded-lg text-white focus:outline-none focus:ring-2 focus:ring-primary">
+                        <option value="stocks">Azioni</option>
+                        <option value="etf">ETF</option>
+                        <option value="crypto">Criptovalute</option>
+                        <option value="bonds">Obbligazioni</option>
+                        <option value="commodities">Materie Prime</option>
+                        <option value="cash">Liquidità</option>
+                    </select>
+                </div>
+                <div class="flex space-x-3">
+                    <button type="submit" class="flex-1 bg-primary hover:bg-blue-700 text-white font-semibold py-3 rounded-lg transition-colors">
+                        Aggiungi
+                    </button>
+                    <button type="button" onclick="closeAddHoldingModal()" class="flex-1 bg-slate-700 hover:bg-slate-600 text-white font-semibold py-3 rounded-lg transition-colors">
+                        Annulla
+                    </button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <!-- Add Transaction Modal -->
+    <div id="addTransactionModal" class="hidden fixed inset-0 bg-black/70 backdrop-blur-sm flex items-center justify-center p-4 z-50">
+        <div class="bg-slate-800 rounded-2xl p-8 max-w-md w-full border border-white/20">
+            <h3 class="text-2xl font-bold text-white mb-6">Nuova Transazione</h3>
+            <form onsubmit="addTransaction(event)">
+                <div class="mb-4">
+                    <label class="block text-gray-300 mb-2">Tipo</label>
+                    <select id="transType" class="w-full px-4 py-3 bg-slate-700 border border-slate-600 rounded-lg text-white focus:outline-none focus:ring-2 focus:ring-primary">
+                        <option value="buy">Acquisto</option>
+                        <option value="sell">Vendita</option>
+                    </select>
+                </div>
+                <div class="mb-4">
+                    <label class="block text-gray-300 mb-2">Simbolo</label>
+                    <input type="text" id="transSymbol" required 
+                        class="w-full px-4 py-3 bg-slate-700 border border-slate-600 rounded-lg text-white placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-primary uppercase"
+                        placeholder="AAPL">
+                </div>
+                <div class="mb-4">
+                    <label class="block text-gray-300 mb-2">Quantità</label>
+                    <input type="number" id="transQuantity" step="0.0001" required 
+                        class="w-full px-4 py-3 bg-slate-700 border border-slate-600 rounded-lg text-white placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-primary"
+                        placeholder="10">
+                </div>
+                <div class="mb-4">
+                    <label class="block text-gray-300 mb-2">Prezzo per azione (€)</label>
+                    <input type="number" id="transPrice" step="0.01" required 
+                        class="w-full px-4 py-3 bg-slate-700 border border-slate-600 rounded-lg text-white placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-primary"
+                        placeholder="150.00">
+                </div>
+                <div class="mb-4">
+                    <label class="block text-gray-300 mb-2">Data</label>
+                    <input type="date" id="transDate" required 
+                        class="w-full px-4 py-3 bg-slate-700 border border-slate-600 rounded-lg text-white focus:outline-none focus:ring-2 focus:ring-primary">
+                </div>
+                <div class="flex space-x-3">
+                    <button type="submit" class="flex-1 bg-secondary hover:bg-green-700 text-white font-semibold py-3 rounded-lg transition-colors">
+                        Aggiungi
+                    </button>
+                    <button type="button" onclick="closeAddTransactionModal()" class="flex-1 bg-slate-700 hover:bg-slate-600 text-white font-semibold py-3 rounded-lg transition-colors">
+                        Annulla
+                    </button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <!-- Notification -->
+    <div id="notification" class="fixed top-4 right-4 px-6 py-4 rounded-lg shadow-lg transform translate-x-full transition-transform duration-300 z-50">
+        <span id="notifMessage"></span>
+    </div>
+
+    <script>
+        const API_URL = window.location.origin;
+        let token = localStorage.getItem('token');
+        let allocationChart = null;
+        let historyChart = null;
+
+        function showNotification(message, type = 'error') {
+            const notif = document.getElementById('notification');
+            const msg = document.getElementById('notifMessage');
+            msg.textContent = message;
+            notif.className = `fixed top-4 right-4 px-6 py-4 rounded-lg shadow-lg transform transition-transform duration-300 z-50 ${
+                type === 'success' ? 'bg-green-600' : 'bg-red-600'
+            }`;
+            notif.classList.remove('translate-x-full');
+            setTimeout(() => notif.classList.add('translate-x-full'), 3000);
+        }
+
+        function logout() {
+            localStorage.removeItem('token');
+            window.location.href = '/';
+        }
+
+        async function loadDashboard() {
+            if (!token) {
+                window.location.href = '/';
+                return;
+            }
+
+            const headers = { 'Authorization': `Bearer ${token}` };
+
+            // Load user info
+            try {
+                const userRes = await fetch(`${API_URL}/api/auth/me`, { headers });
+                if (!userRes.ok) throw new Error('Sessione scaduta');
+                const user = await userRes.json();
+                document.getElementById('userEmail').textContent = user.email;
+            } catch (err) {
+                logout();
+                return;
+            }
+
+            // Load portfolio summary
+            try {
+                const summaryRes = await fetch(`${API_URL}/api/portfolio/summary`, { headers });
+                if (summaryRes.ok) {
+                    const summary = await summaryRes.json();
+                    document.getElementById('totalValue').textContent = `€ ${summary.total_value.toLocaleString('it-IT', {minimumFractionDigits: 2})}`;
+                    document.getElementById('totalCost').textContent = `€ ${summary.total_cost.toLocaleString('it-IT', {minimumFractionDigits: 2})}`;
+                    
+                    const gainEl = document.getElementById('totalGain');
+                    const gainPercentEl = document.getElementById('totalGainPercent');
+                    gainEl.textContent = `${summary.total_gain >= 0 ? '+' : ''}€ ${Math.abs(summary.total_gain).toLocaleString('it-IT', {minimumFractionDigits: 2})}`;
+                    gainPercentEl.textContent = `(${summary.total_gain_percent >= 0 ? '+' : ''}${summary.total_gain_percent.toFixed(2)}%)`;
+                    
+                    if (summary.total_gain >= 0) {
+                        gainEl.className = 'text-3xl font-bold text-success';
+                    } else {
+                        gainEl.className = 'text-3xl font-bold text-danger';
+                    }
+                    
+                    document.getElementById('holdingsCount').textContent = summary.holdings_count;
+                    
+                    // Allocation chart
+                    renderAllocationChart(summary.allocation);
+                }
+            } catch (err) {
+                console.error('Error loading summary:', err);
+            }
+
+            // Load holdings
+            try {
+                const holdingsRes = await fetch(`${API_URL}/api/holdings`, { headers });
+                if (holdingsRes.ok) {
+                    const holdings = await holdingsRes.json();
+                    renderHoldings(holdings);
+                }
+            } catch (err) {
+                console.error('Error loading holdings:', err);
+            }
+
+            // Load transactions
+            try {
+                const transRes = await fetch(`${API_URL}/api/transactions?limit=10`, { headers });
+                if (transRes.ok) {
+                    const transactions = await transRes.json();
+                    renderTransactions(transactions);
+                }
+            } catch (err) {
+                console.error('Error loading transactions:', err);
+            }
+
+            // Load history
+            try {
+                const historyRes = await fetch(`${API_URL}/api/portfolio/history?days=30`, { headers });
+                if (historyRes.ok) {
+                    const history = await historyRes.json();
+                    renderHistoryChart(history);
+                }
+            } catch (err) {
+                console.error('Error loading history:', err);
+            }
+        }
+
+        function renderHoldings(holdings) {
+            const tbody = document.getElementById('holdingsTable');
+            const noData = document.getElementById('noHoldings');
+            
+            if (holdings.length === 0) {
+                tbody.innerHTML = '';
+                noData.classList.remove('hidden');
+                return;
+            }
+            
+            noData.classList.add('hidden');
+            tbody.innerHTML = holdings.map(h => {
+                const value = h.current_price * h.quantity;
+                const cost = h.average_price * h.quantity;
+                const gain = value - cost;
+                const gainPercent = (gain / cost * 100) || 0;
+                const gainClass = gain >= 0 ? 'text-success' : 'text-danger';
+                
+                return `
+                    <tr class="border-b border-slate-700 hover:bg-slate-700/50">
+                        <td class="py-3 px-4 font-semibold">${h.symbol}</td>
+                        <td class="py-3 px-4">${h.quantity.toFixed(4)}</td>
+                        <td class="py-3 px-4 text-right">€ ${h.average_price.toFixed(2)}</td>
+                        <td class="py-3 px-4 text-right">€ ${h.current_price.toFixed(2)}</td>
+                        <td class="py-3 px-4 text-right">€ ${value.toFixed(2)}</td>
+                        <td class="py-3 px-4 text-right ${gainClass}">
+                            ${gain >= 0 ? '+' : ''}€ ${gain.toFixed(2)} (${gainPercent.toFixed(1)}%)
+                        </td>
+                        <td class="py-3 px-4 text-center">
+                            <button onclick="deleteHolding(${h.id})" class="text-danger hover:text-red-400 transition-colors">
+                                🗑️
+                            </button>
+                        </td>
+                    </tr>
+                `;
+            }).join('');
+        }
+
+        function renderTransactions(transactions) {
+            const tbody = document.getElementById('transactionsTable');
+            const noData = document.getElementById('noTransactions');
+            
+            if (transactions.length === 0) {
+                tbody.innerHTML = '';
+                noData.classList.remove('hidden');
+                return;
+            }
+            
+            noData.classList.add('hidden');
+            tbody.innerHTML = transactions.map(t => {
+                const total = t.quantity * t.price;
+                const typeClass = t.type === 'buy' ? 'text-success' : 'text-danger';
+                const typeLabel = t.type === 'buy' ? '🟢 Acquisto' : '🔴 Vendita';
+                
+                return `
+                    <tr class="border-b border-slate-700 hover:bg-slate-700/50">
+                        <td class="py-3 px-4">${new Date(t.date).toLocaleDateString('it-IT')}</td>
+                        <td class="py-3 px-4 ${typeClass}">${typeLabel}</td>
+                        <td class="py-3 px-4 font-semibold">${t.symbol}</td>
+                        <td class="py-3 px-4 text-right">${t.quantity.toFixed(4)}</td>
+                        <td class="py-3 px-4 text-right">€ ${t.price.toFixed(2)}</td>
+                        <td class="py-3 px-4 text-right">€ ${total.toFixed(2)}</td>
+                    </tr>
+                `;
+            }).join('');
+        }
+
+        function renderAllocationChart(allocation) {
+            const ctx = document.getElementById('allocationChart').getContext('2d');
+            
+            if (allocationChart) allocationChart.destroy();
+            
+            const colors = {
+                stocks: '#3b82f6',
+                etf: '#10b981',
+                crypto: '#f59e0b',
+                bonds: '#8b5cf6',
+                commodities: '#ef4444',
+                cash: '#6b7280'
+            };
+            
+            const labels = {
+                stocks: 'Azioni',
+                etf: 'ETF',
+                crypto: 'Crypto',
+                bonds: 'Obbligazioni',
+                commodities: 'Materie Prime',
+                cash: 'Liquidità'
+            };
+            
+            allocationChart = new Chart(ctx, {
+                type: 'doughnut',
+                data: {
+                    labels: Object.keys(allocation).map(k => labels[k] || k),
+                    datasets: [{
+                        data: Object.values(allocation),
+                        backgroundColor: Object.keys(allocation).map(k => colors[k] || '#6b7280'),
+                        borderWidth: 0
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    plugins: {
+                        legend: {
+                            position: 'bottom',
+                            labels: { color: '#fff', padding: 15 }
+                        }
+                    }
+                }
+            });
+        }
+
+        function renderHistoryChart(history) {
+            const ctx = document.getElementById('historyChart').getContext('2d');
+            
+            if (historyChart) historyChart.destroy();
+            
+            historyChart = new Chart(ctx, {
+                type: 'line',
+                data: {
+                    labels: history.map(h => new Date(h.date).toLocaleDateString('it-IT', {day: '2-digit', month: '2-digit'})),
+                    datasets: [{
+                        label: 'Valore Portfolio',
+                        data: history.map(h => h.value),
+                        borderColor: '#3b82f6',
+                        backgroundColor: 'rgba(59, 130, 246, 0.1)',
+                        fill: true,
+                        tension: 0.4
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    plugins: {
+                        legend: { display: false }
+                    },
+                    scales: {
+                        y: {
+                            grid: { color: '#334155' },
+                            ticks: { color: '#94a3b8' }
+                        },
+                        x: {
+                            grid: { display: false },
+                            ticks: { color: '#94a3b8', maxTicksLimit: 10 }
+                        }
+                    }
+                }
+            });
+        }
+
+        function showAddHoldingModal() {
+            document.getElementById('addHoldingModal').classList.remove('hidden');
+        }
+
+        function closeAddHoldingModal() {
+            document.getElementById('addHoldingModal').classList.add('hidden');
+        }
+
+        function showAddTransactionModal() {
+            document.getElementById('addTransactionModal').classList.remove('hidden');
+            document.getElementById('transDate').valueAsDate = new Date();
+        }
+
+        function closeAddTransactionModal() {
+            document.getElementById('addTransactionModal').classList.add('hidden');
+        }
+
+        async function addHolding(event) {
+            event.preventDefault();
+            
+            const data = {
+                symbol: document.getElementById('holdingSymbol').value.toUpperCase(),
+                quantity: parseFloat(document.getElementById('holdingQuantity').value),
+                average_price: parseFloat(document.getElementById('holdingPrice').value),
+                asset_class: document.getElementById('holdingAssetClass').value
+            };
+            
+            try {
+                const res = await fetch(`${API_URL}/api/holdings`, {
+                    method: 'POST',
+                    headers: {
+                        'Authorization': `Bearer ${token}`,
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify(data)
+                });
+                
+                if (!res.ok) {
+                    const err = await res.json();
+                    throw new Error(err.detail || 'Errore aggiunta strumento');
+                }
+                
+                showNotification('Strumento aggiunto!', 'success');
+                closeAddHoldingModal();
+                loadDashboard();
+            } catch (err) {
+                showNotification(err.message, 'error');
+            }
+        }
+
+        async function addTransaction(event) {
+            event.preventDefault();
+            
+            const data = {
+                type: document.getElementById('transType').value,
+                symbol: document.getElementById('transSymbol').value.toUpperCase(),
+                quantity: parseFloat(document.getElementById('transQuantity').value),
+                price: parseFloat(document.getElementById('transPrice').value),
+                date: document.getElementById('transDate').value
+            };
+            
+            try {
+                const res = await fetch(`${API_URL}/api/transactions`, {
+                    method: 'POST',
+                    headers: {
+                        'Authorization': `Bearer ${token}`,
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify(data)
+                });
+                
+                if (!res.ok) {
+                    const err = await res.json();
+                    throw new Error(err.detail || 'Errore aggiunta transazione');
+                }
+                
+                showNotification('Transazione aggiunta!', 'success');
+                closeAddTransactionModal();
+                loadDashboard();
+            } catch (err) {
+                showNotification(err.message, 'error');
+            }
+        }
+
+        async function deleteHolding(id) {
+            if (!confirm('Sei sicuro di voler eliminare questo strumento?')) return;
+            
+            try {
+                const res = await fetch(`${API_URL}/api/holdings/${id}`, {
+                    method: 'DELETE',
+                    headers: { 'Authorization': `Bearer ${token}` }
+                });
+                
+                if (!res.ok) throw new Error('Errore eliminazione');
+                
+                showNotification('Strumento eliminato', 'success');
+                loadDashboard();
+            } catch (err) {
+                showNotification(err.message, 'error');
+            }
+        }
+
+        // Init
+        window.onload = loadDashboard;
+    </script>
+</body>
+</html>
