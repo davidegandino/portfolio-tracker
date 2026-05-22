@@ -5,13 +5,13 @@ from datetime import datetime, timedelta
 from typing import List, Optional, Dict
 from contextlib import asynccontextmanager
 
-from fastapi import FastAPI, Depends, HTTPException, status, Request, Body
+from fastapi import FastAPI, Depends, HTTPException, status, Request
 from fastapi.security import OAuth2PasswordBearer, OAuth2PasswordRequestForm
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import HTMLResponse, FileResponse
 from sqlalchemy.orm import Session
 from sqlalchemy import and_
-from pydantic import BaseModel, Field, validator
+from pydantic import BaseModel, Field
 from jose import JWTError, jwt
 import pyotp
 import qrcode
@@ -202,18 +202,19 @@ async def setup_totp(current_user: User = Depends(get_current_user), db: Session
     return {"secret": secret, "totp_uri": totp_uri, "qr_code": f"data:image/png;base64,{qr_code_base64}"}
 
 class TOTPVerifyRequest(BaseModel):
-    code: str = Field(..., min_length=6, max_length=6)
+    code: str = Field(..., min_length=6, max_length=6, description="Codice TOTP a 6 cifre")
 
 @app.post("/api/auth/totp/verify")
 async def verify_totp_endpoint(
-    request: TOTPVerifyRequest,
+    request_data: TOTPVerifyRequest,
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db)
 ):
+    """Verifica e attiva TOTP"""
     logger.info(f"Verifica TOTP per: {current_user.email}")
     if not current_user.totp_secret:
         raise HTTPException(status_code=400, detail="Setup TOTP non iniziato")
-    if not verify_totp_code(current_user.totp_secret, request.code):
+    if not verify_totp_code(current_user.totp_secret, request_data.code):
         raise HTTPException(status_code=400, detail="Codice non valido")
     current_user.totp_enabled = True
     db.commit()
