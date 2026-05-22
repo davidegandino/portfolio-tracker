@@ -1,4 +1,4 @@
-from pydantic import BaseModel, EmailStr, Field, validator
+from pydantic import BaseModel, Field, validator, EmailStr
 from typing import Optional, List, Dict
 from datetime import datetime
 from enum import Enum
@@ -22,7 +22,13 @@ class AssetClass(str, Enum):
 # User Schemas
 # ============================================
 class UserBase(BaseModel):
-    email: EmailStr
+    email: str  # Uso str invece di EmailStr
+    
+    @validator("email")
+    def validate_email(cls, v):
+        if "@" not in v or "." not in v:
+            raise ValueError("Email non valida")
+        return v.lower().strip()
 
 class UserCreate(UserBase):
     password: str = Field(..., min_length=8)
@@ -38,9 +44,15 @@ class UserCreate(UserBase):
         return v
 
 class UserLogin(BaseModel):
-    username: EmailStr
+    username: str  # Uso str invece di EmailStr
     password: str
     totp: Optional[str] = Field(None, min_length=6, max_length=6)
+    
+    @validator("username")
+    def validate_username(cls, v):
+        if "@" not in v:
+            raise ValueError("Username deve essere una email")
+        return v.lower().strip()
 
 class UserResponse(UserBase):
     id: int
