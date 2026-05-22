@@ -2,13 +2,16 @@ services:
   - type: web
     name: portfolio-tracker
     env: python
-    buildCommand: pip install -r requirements.txt
-    startCommand: python main.py
-    rootDir: backend
+    region: frankfurt
     plan: free
+    buildCommand: pip install -r requirements.txt
+    startCommand: cd backend && uvicorn main:app --host 0.0.0.0 --port $PORT
     envVars:
       - key: PYTHON_VERSION
-        value: 3.11.0
-      - key: DATABASE_URL
-        generateValue: true
-        sync: false
+        value: 3.12.0
+      - key: ENVIRONMENT
+        value: production
+    disk:
+      name: sqlite-data
+      mountPath: /opt/render/project/src/backend/data
+      sizeGB: 1
